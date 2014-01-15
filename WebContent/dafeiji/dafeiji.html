@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Dafeiji in Seagate</title>
+<style>
+canvas {
+	display: block; 
+	background: url(bg.jpg) no-repeat; 
+	background-size: cover;
+	margin: 0 auto;
+}
+.manual {
+	position: absolute; 
+	top: 0; 
+	font: 12px Arial;
+	left: 0; 
+	width: 180px;
+}
+</style>
+</head>
+<body style="margin: 0;">
+<canvas id="dafeiji">
+   Your browser does not support HTML5 Canvas.
+</canvas>
+
+<div class="manual">
+	<h2><b>Dafeiji in Seagate</b></h2> 
+	
+	<h3><li>Desktop</li></h3> 
+	<b>Move:</b>
+	<li>Keyboard (up down left right)</li>
+	<li>Mouse (double click the target)</li>
+	<li>Mouse (drag)</li>
+	<br>
+	<b>Shot:</b>
+	<li>Keyboard (space)</li>
+	<li>Mouse (left click)</li>
+	
+	<h3><li>Touch Devices</li></h3> 
+	<b>Move:</b>
+	<li>mouse (tap the target)</li>
+	<br>
+	<b>Shot:</b>
+	<li>automatic</li>
+</div>
+
+<script src="http://code.jquery.com/jquery-latest.js"></script>
+<script type="text/javascript">
+window.requestNextAnimationFrame = (function() {
+	var originalWebkitRequestAnimationFrame = undefined, wrapper = undefined, callback = undefined, geckoVersion = 0, userAgent = navigator.userAgent, index = 0, self = this;
+	// Workaround for Chrome 10 bug where Chrome
+	// does not pass the time to the animation function
+	if (window.webkitRequestAnimationFrame) {
+		// Define the wrapper
+		wrapper = function(time) {
+			if (time === undefined) {
+				time = +new Date();
+			}
+			self.callback(time);
+		};
+		// Make the switch
+		originalWebkitRequestAnimationFrame = window.webkitRequestAnimationFrame;
+		window.webkitRequestAnimationFrame = function(callback, element) {
+			self.callback = callback;
+			// Browser calls the wrapper and wrapper calls the callback
+			originalWebkitRequestAnimationFrame(wrapper, element);
+		}
+	}
+	// Workaround for Gecko 2.0, which has a bug in
+	// mozRequestAnimationFrame() that restricts animations
+	// to 30-40 fps.
+	if (window.mozRequestAnimationFrame) {
+		// Check the Gecko version. Gecko is used by browsers
+		// other than Firefox. Gecko 2.0 corresponds to
+		// Firefox 4.0.
+		index = userAgent.indexOf('rv:');
+		if (userAgent.indexOf('Gecko') != -1) {
+			geckoVersion = userAgent.substr(index + 3, 3);
+			if (geckoVersion === '2.0') {
+				// Forces the return statement to fall through
+				// to the setTimeout() function.
+				window.mozRequestAnimationFrame = undefined;
+			}
+		}
+	}
+	return window.requestAnimationFrame
+			|| window.webkitRequestAnimationFrame
+			|| window.mozRequestAnimationFrame
+			|| window.oRequestAnimationFrame
+			|| window.msRequestAnimationFrame ||
+			function(callback, element) {
+				var start, finish;
+				window.setTimeout(function() {
+					start = +new Date();
+					callback(start);
+					finish = +new Date();
+					self.timeout = 1000 / 60 - (finish - start);
+				}, self.timeout);
+			};
+})();
+
+/****************************************************************** Dafeiji ******************************************************************/
+var Dafeiji = (function($) {
+	var Dafeiji = function(canvasId) {
+		this.canvas = document.getElementById(canvasId);
+		this.documentWidth = 600;
+		if (this.documentWidth > $(document).outerWidth()) {
+			this.documentWidth = $(document).outerWidth();
+			$(".manual").hide();
+		}
+		this.documentHeight = $(document).outerHeight();
+		if (this.documentHeight > 800) {
+			this.documentHeight = 800;
+		}
+		$(this.canvas).attr({
+			"width" : this.documentWidth,
+			"height" : this.documentHeight
+		});
+		this.paused = false;
+		this.PAUSED_CHECK_INTERVAL = 500;
+		this.pauseStartTime = 0;
+		this.lives = 3;
+		this.killedEnemies = 0;
+		this.lastAnimationFrameTime = 0;
+		this.lastFpsUpdateTime = 0;
+		this.rockTime = 0;
+		this.enemyTime = 0;
+		this.shotTime = 0;
+		this.backgroundOffset = 0;
+		this.firePower = 1;
+		this.bullets = {};
+		this.rocks = {};
+		this.enemies = {};
+		this.explodes = {};
+		this.bonus = {};
+		this.options = {
+			"rockVelocity" : 5,
+			"left": 37,
+			"up": 38,
+			"right": 39,
+			"down": 40,
+			"shot": 32,
+			"meVelocity": 10,
+			"meVelocityInterval": 50,
+			"rockInterval": 5000,
+			"enemyInterval": 5000,
+			"shotInterval": 1000
+		};
+	};
+	
+	Dafeiji.prototype.random = function (n, m) {   
+		var c = m - n + 1;
+	    return Math.floor(Math.random() * c + n);
+	};
+
+	Dafeiji.prototype.init = function () {
+		var t = this;
+		t.ctx = t.canvas.getContext('2d');
+		t.mpng = new Image();
+		t.mpng.src = "m.png";
+		t.epng = new Image();
+		t.rock = new Image();
+		t.bpng = new Image();
+		t.explode_png = new Image();
+		t.mpng.onload = function () {
+		t.epng.src = "es.png";
+		t.epng.onload = function () {
+		t.rock.src = "rocks.png";
+		t.rock.onload = function () {
+			t.bpng.src = "b.png";
+			t.explode_png.src = "explode.png";
+			requestNextAnimationFrame(function(now) {
+				t.animate(now);
+			});
+			$(document).keydown(function (e) {
+				var e_which = e.which;
+				console.log(e_which);
+				if (e_which == t.options.left) {
+					e.preventDefault();
+					console.log("left");
+					t.moveFlag = false;
+					delete dafeiji.moveto_xy;
+					for (var i=0; i<t.options.meVelocity; i++) {
+						setTimeout(function () {
+							if (typeof(t.me) != "undefined" && t.me.x > 0) {
+								t.me.x -= 1;
+							}
+						}, t.options.meVelocityInterval * i);
+					}
+				} else if (e_which == t.options.up) {
+					e.preventDefault();
+					console.log("up");
+					t.moveFlag = false;
+					delete dafeiji.moveto_xy;
+					for (var i=0; i<t.options.meVelocity; i++) {
+						setTimeout(function () {
+							if (typeof(t.me) != "undefined" && t.me.y > 0) {
+								t.me.y -= 1;
+							}
+						}, t.options.meVelocityInterval * i);
+					}
+				} else if (e_which == t.options.right) {
+					e.preventDefault();
+					console.log("right");
+					t.moveFlag = false;
+					delete dafeiji.moveto_xy;
+					for (var i=0; i<t.options.meVelocity; i++) {
+						setTimeout(function () {
+							if (typeof(t.me) != "undefined" && t.me.x < t.documentWidth - new Dafeiji.Feiji(t).width) {
+								t.me.x += 1;
+							}
+						}, t.options.meVelocityInterval * i);
+					}
+				} else if (e_which == t.options.down) {
+					e.preventDefault();
+					console.log("down");
+					t.moveFlag = false;
+					delete dafeiji.moveto_xy;
+					for (var i=0; i<t.options.meVelocity; i++) {
+						setTimeout(function () {
+							if (typeof(t.me) != "undefined" && t.me.y < t.documentHeight - new Dafeiji.Feiji(t).height) {
+								t.me.y += 1;
+							}
+						}, t.options.meVelocityInterval * i);
+					}
+				} else if (e_which == t.options.shot) {
+					e.preventDefault();
+					console.log("shot");
+					t.shot(true);
+				}
+			});
+			if ("ontouchstart" in document) {
+				$(t.canvas).on("touchstart", function (e) {
+					e.preventDefault();
+					console.log("moveto");
+					t.moveto(e);
+				});
+			} else {
+				window.onblur = function () {
+					t.togglePaused();
+				};
+				window.onfocus = function () {
+					t.togglePaused();
+				};
+				$(t.canvas).click(function (e) {
+					e.preventDefault();
+					console.log("shot");
+					t.shot(true);
+				});
+				$(t.canvas).dblclick(function (e) {
+					e.preventDefault();
+					console.log("moveto");
+					t.moveto(e);
+				});
+				$(t.canvas).mousemove(function (e) {
+					t.mousemove(e);
+				});
+				$(t.canvas).mouseout(function (e) {
+					t.moveFlag = false;
+				});
+				
+			}
+		};
+		};
+		};
+	};
+	
+/****************************************************************** animate ******************************************************************/
+	Dafeiji.prototype.animate = function(now) {
+		var t = this;
+		if (t.paused) {
+			setTimeout(function () {
+	            requestNextAnimationFrame(function(now) {
+					t.animate(now);
+				});
+	         }, t.PAUSED_CHECK_INTERVAL);
+		} else {
+			t.now = now;
+			t.getFps(now);
+			t.ctx.clearRect(0, 0, t.documentWidth, t.documentHeight);
+			// rocks
+			if (t.rockTime == 0 || now - t.rockTime > t.options.rockInterval) {
+				t.rocks[t.now] = new Dafeiji.Rock(t);
+				t.rocks[t.now].key = t.now;
+				t.rockTime = now;
+			}
+			for(var key in t.rocks) {
+			    if (t.rocks.hasOwnProperty(key)) {
+			    	t.rocks[key].init();
+			    }
+			}
+			// bonus
+			for(var key in t.bonus) {
+			    if (t.bonus.hasOwnProperty(key)) {
+			    	t.bonus[key].init();
+			    }
+			}
+			// enemies
+			if (t.enemyTime == 0 || now - t.enemyTime > t.options.enemyInterval) {
+				t.enemies[t.now] = new Dafeiji.Enemy(t);
+				t.enemies[t.now].key = t.now;
+				t.enemyTime = now;
+			}
+			for(var key in t.enemies) {
+			    if (t.enemies.hasOwnProperty(key)) {
+			    	var enemy = t.enemies[key];
+			    	enemy.move();
+			    	enemy.init();
+			    }
+			}
+			// me
+			if (typeof(t.me) == "undefined") {
+				if (t.lives > 0) {
+					t.me = new Dafeiji.Me(t);
+					t.moveFlag = false;
+				} else {
+					t.ctx.save();
+					t.ctx.textBaseline = "top";
+					t.ctx.font = "50px Arial";
+					t.ctx.fillStyle = "#ffffff";
+					t.ctx.shadowOffsetX = 3;
+					t.ctx.shadowOffsetY = 3;
+					t.ctx.shadowBlur = 20;
+					t.ctx.shadowColor = "#ffffff";
+					t.ctx.fillText("Game Over", t.documentWidth / 2 - 130, t.documentHeight / 2 - 50);
+					t.ctx.restore();
+				}
+			} else {
+				t.me.move();
+				t.me.init();
+			}
+			// shot
+			if ("ontouchstart" in document) {
+				if (now - t.shotTime > t.options.shotInterval) {
+					t.shot(true);
+					t.shotTime = now;
+				}
+			}
+			// explodes
+			for(var key in t.explodes) {
+			    if (t.explodes.hasOwnProperty(key)) {
+			    	var explode = t.explodes[key];
+			    	explode.init();
+			    }
+			}
+			// others
+			t.shot(false);
+			t.checkCrash();
+			t.drawStatus();
+			// loop
+			requestNextAnimationFrame(function(now) {
+				t.animate(now);
+			});
+		}
+	};
+	
+	Dafeiji.prototype.togglePaused = function () {
+		var t = this;
+		var now = +new Date();
+		t.paused = !t.paused;
+		if (t.paused) {
+			if (t.lives > 0) {
+				t.ctx.save();
+				t.ctx.textBaseline = "top";
+				t.ctx.font = "50px Arial";
+				t.ctx.fillStyle = "#ffffff";
+				t.ctx.shadowOffsetX = 3;
+				t.ctx.shadowOffsetY = 3;
+				t.ctx.shadowBlur = 20;
+				t.ctx.shadowColor = "#ffffff";
+				t.ctx.fillText("Paused", t.documentWidth / 2 - 80, t.documentHeight / 2 - 50);
+				t.ctx.restore();
+			}
+			t.pauseStartTime = now;
+		} else {
+			t.lastAnimationFrameTime += (now - t.pauseStartTime);
+		}
+	};
+	
+	Dafeiji.prototype.getCursorPosition = function (e) {
+		var rect = this.canvas.getBoundingClientRect();
+		if ("ontouchstart" in document) {
+			e = e.originalEvent || e; 
+			return {
+				x: e.touches[0].clientX - rect.left,
+				y: e.touches[0].clientY - rect.top
+			};
+		} else {
+	        return {
+	          x: e.clientX - rect.left,
+	          y: e.clientY - rect.top
+	        };
+		}
+	};
+	
+	Dafeiji.prototype.mousemove = function (e) {
+		var t = this;
+		if (typeof(t.xy) == "undefined") {
+			t.xy = t.getCursorPosition(e);
+		} else {
+			var new_xy = t.getCursorPosition(e);
+			if (typeof(t.me) != "undefined" && new_xy.x > t.me.x + t.me.width / 6 * 2 && new_xy.x < t.me.x + t.me.width / 6 * 4 && new_xy.y > t.me.y + t.me.height / 6 * 2 && new_xy.y < t.me.y + t.me.height / 6 * 4) {
+				t.moveFlag = true;
+				delete dafeiji.moveto_xy;
+			}
+			if (typeof(t.moveFlag) != "undefined" && t.moveFlag) {
+				var dx = new_xy.x - t.xy.x;
+				var dy = new_xy.y - t.xy.y;
+				t.me.x += dx;
+				t.me.y += dy;
+			}
+			t.xy = new_xy;
+		}
+	};
+	
+	Dafeiji.prototype.moveto = function (e) {
+		var t = this;
+		t.moveFlag = false;
+		t.moveto_xy = t.getCursorPosition(e);
+		t.moveto_xy.x -= t.me.width / 2;
+		t.moveto_dx = t.moveto_xy.x - t.me.x;
+		t.moveto_dy = t.moveto_xy.y - t.me.y;
+		t.moveto_rate = Math.abs(t.moveto_dx) / Math.abs(t.moveto_dy);
+		t.moveto_bx = Math.abs(t.moveto_dx) - Math.abs(t.moveto_dy);
+	};
+	
+	Dafeiji.prototype.drawStatus = function () {
+		var t = this;
+		for (var i=0; i<t.lives; i++) {
+			t.ctx.drawImage(dafeiji.mpng, 0, 0, 100, 100, 30 * i, 0, 30, 30);
+		}
+		t.ctx.drawImage(dafeiji.epng, 0, 0, 100, 60, t.documentWidth - 100, 0, 50, 30);
+		t.ctx.drawImage(dafeiji.epng, 0, 60, 100, 100, t.documentWidth - 130, 0, 30, 30);
+		t.ctx.save();
+		t.ctx.textBaseline = "top";
+		t.ctx.font = "20px Arial";
+		t.ctx.fillStyle = "#ffffff";
+		t.ctx.shadowOffsetX = 1;
+		t.ctx.shadowOffsetY = 1;
+		t.ctx.shadowBlur = 10;
+		t.ctx.shadowColor = "#ffffff";
+		t.ctx.fillText("×" + t.killedEnemies, t.documentWidth - 45, 5);
+		t.ctx.restore();
+	}
+	
+	Dafeiji.prototype.checkCrash = function () {
+		var t = this;
+		for (var key in t.enemies) {
+    		if (t.enemies.hasOwnProperty(key)) {
+    			var enemy = t.enemies[key];
+    			for(var bkey in t.bullets) {
+				    if (t.bullets.hasOwnProperty(bkey)) {
+				    	var bullet = t.bullets[bkey];
+				    	if (t.hit(bullet, enemy)) {
+				    		delete t.bullets[bkey];
+				    		enemy.hp -= 1;
+				    		if (enemy.hp <= 0) {
+					    		enemy.destroy(t);
+					    		t.killedEnemies += 1;
+				    		}
+				    		break;
+				    	}
+				    }
+    			}
+    			if (typeof(t.enemies[key]) != "undefined") {
+	    			if (t.hit(t.me, enemy)) {
+	    				enemy.destroy(t);
+	    				t.me.destroy(t);
+	    				t.lives -= 1;
+	    				t.firePower = 1;
+	    				delete t.moveto_xy;
+	    				break;
+	    			}
+    			}
+    		}
+		}
+		for (var key in t.bonus) {
+    		if (t.bonus.hasOwnProperty(key)) {
+    			var bonus = t.bonus[key];
+    			if (t.hit(bonus, t.me)) {
+    				if (bonus.type == 1) {
+    					t.lives += 1;
+    				} else if (bonus.type == 0) {
+    					t.firePower += 0.5;
+    				} else if (bonus.type == 2) {
+    					t.me.velocity += 50;
+    				}
+    				delete t.bonus[bonus.key];
+    			}
+    		}
+		}
+	};
+	
+	Dafeiji.prototype.shot = function (init) {
+		var t = this;
+		t.ctx.save();
+		if (init) {
+			t.bullets[t.now] = new Dafeiji.Feiji.Bullet(t);
+			t.bullets[t.now].init();
+		} else {
+			if (typeof(t.bullets) != "undefined") {
+				for(var key in t.bullets) {
+				    if (t.bullets.hasOwnProperty(key)) {
+				    	var bullet = t.bullets[key];
+				    	bullet.shot();
+				    }
+				}
+			}
+		}
+		t.ctx.restore();
+	};
+	
+	Dafeiji.prototype.hit = function(obj1, obj2) {
+		var t = this;
+		if (typeof(obj1) == "undefined" || typeof(obj2) == "undefined") {
+			return false;
+		}
+		var b = false;
+		var obj1_midPoint = {"x": obj1.x + obj1.width / 2, "y": obj1.y + obj1.height / 2};
+		var obj2_midPoint = {"x": obj2.x + obj2.width / 2, "y": obj2.y + obj2.height / 2};
+		var obj1_radius = obj1.width / 2;
+		if (obj1.height / 2 > obj1_radius) {
+			obj1_radius = obj1.height / 2;
+		}
+		var obj2_radius = obj2.width / 2;
+		if (obj2.height / 2 > obj2_radius) {
+			obj2_radius = obj2.height / 2;
+		}
+		var temp1 = Math.abs(obj1_midPoint.x - obj2_midPoint.x);
+		var temp2 = Math.abs(obj1_midPoint.y - obj2_midPoint.y);
+		var distance = Math.sqrt(temp1 * temp1 + temp2 * temp2);
+		if (distance < obj1_radius + obj2_radius) {
+			b = true;
+		}
+		return b;
+	};
+	
+	Dafeiji.prototype.getFps = function (now) {
+		var t = this;
+		t.fps = 1000 / (now - t.lastAnimationFrameTime);
+		t.lastAnimationFrameTime = now;
+		if (now - t.lastFpsUpdateTime > 10000) {
+			console.log("fps - " + t.fps);
+		    t.lastFpsUpdateTime = now;
+		}
+	};
+	
+	Dafeiji.prototype.setBackgroundOffset = function () { 
+		var t = this;
+		t.backgroundOffset += t.options.rockVelocity / t.fps;
+		if (!(t.backgroundOffset > 0 && t.backgroundOffset < t.bg.height)) {
+			t.backgroundOffset = 0;
+		}
+		t.ctx.translate(0, t.backgroundOffset);
+	};
+	
+	Dafeiji.prototype.drawStar = function (context, xCenter, yCenter, nPoints, outerRadius, innerRadius) {
+		context.beginPath();
+        for (var ixVertex = 0; ixVertex <= 2 * nPoints; ++ixVertex) {
+            var angle = ixVertex * Math.PI / nPoints - Math.PI / 2;
+            var radius = ixVertex % 2 == 0 ? outerRadius : innerRadius;
+            context.lineTo(xCenter + radius * Math.cos(angle), yCenter + radius * Math.sin(angle));
+        }
+	}
+	
+/****************************************************************** Rock ******************************************************************/
+	Dafeiji.Rock = function (dafeiji) {
+		this.ctx = dafeiji.ctx;
+		this.maxWidth = dafeiji.rock.width / 2;
+		this.minWidth = this.maxWidth / 5;
+		this.maxHeight = dafeiji.rock.height;
+		this.ratio = this.maxHeight / this.maxWidth;
+		this.width = dafeiji.random(this.minWidth, this.maxWidth);
+		this.height = this.width * this.ratio;
+		this.x = dafeiji.random(1, dafeiji.documentWidth - this.width);
+		this.y = this.width / 2 - this.height;
+		this.minVelocity = 5;
+		this.maxVelocity = 10;
+		this.velocity = dafeiji.random(this.minVelocity, this.maxVelocity);
+		this.angle = dafeiji.random(0, 360) * Math.PI / 180;
+		this.image = dafeiji.random(0, 1);
+	};
+	
+	Dafeiji.Rock.prototype.init = function () {
+		var t = this;
+		t.y += t.velocity / dafeiji.fps;
+		if (t.y < dafeiji.documentHeight) {
+			t.ctx.save();
+			t.ctx.translate(t.width / 2 + t.x, t.y);
+			t.ctx.rotate(t.angle);
+			t.ctx.drawImage(dafeiji.rock, t.image * t.maxWidth, 0, t.maxWidth, t.maxHeight, -(t.width / 2), -(t.height / 2), t.width, t.height);
+			t.ctx.restore();
+		} else {
+			delete dafeiji.rocks[t.key];
+		}
+	};
+	
+/****************************************************************** Bonus ******************************************************************/
+	Dafeiji.Bonus = function (dafeiji) {
+		this.ctx = dafeiji.ctx;
+		this.width = 40;
+		this.height = 40;
+		this.minVelocity = 5;
+		this.maxVelocity = 50;
+		this.velocity = dafeiji.random(this.minVelocity, this.maxVelocity);
+		this.type = dafeiji.random(0, 2);
+	};
+	
+	Dafeiji.Bonus.prototype.init = function () {
+		var t = this;
+		t.y += t.velocity / dafeiji.fps;
+		if (t.y < dafeiji.documentHeight) {
+			t.ctx.save();
+			t.ctx.shadowBlur = 10;
+			t.ctx.shadowColor = "rgba(255, 255, 0, 1)";
+		    t.ctx.fillStyle = "rgba(255, 255, 0, 0.7)";
+		    if (t.type == 1) {
+				t.ctx.shadowColor = "rgba(255, 0, 0, 1)";
+			    t.ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
+		    } else if (t.type == 2) {
+				t.ctx.shadowColor = "rgba(0, 255, 0, 1)";
+			    t.ctx.fillStyle = "rgba(0, 255, 0, 0.7)";
+		    }
+		    dafeiji.drawStar(t.ctx, t.width / 2 + t.x, t.height / 2 + t.y, 7, 15, 10);
+		    t.ctx.fill();
+			t.ctx.restore();
+		} else {
+			delete dafeiji.bonus[t.key];
+		}
+	};
+	
+/****************************************************************** Feiji ******************************************************************/
+	Dafeiji.Feiji = function(dafeiji) {
+		this.ctx = dafeiji.ctx;
+		this.x;
+		this.y;
+		this.width = 100;
+		this.height = 100;
+		this.minVelocity = 10;
+		this.maxVelocity = 100;
+		this.isDestroy = false;
+		this.destroyTime = 0;
+	};
+	
+	Dafeiji.Feiji.prototype.init = function () {
+		var t = this;
+		if (typeof(t.isEnemy) != "undefined") {
+			if (t.y > dafeiji.documentHeight) {
+				delete dafeiji.enemies[t.key];
+			} else {
+				t.ctx.drawImage(dafeiji.epng, 0, 60 * t.type, t.width, t.height, t.x, t.y, t.width, t.height);
+			}
+		} else {
+			if (typeof(dafeiji.moveto_xy) != "undefined") {
+				var v = t.velocity / dafeiji.fps;
+				if (Math.abs(dafeiji.moveto_xy.x - t.x) > v && Math.abs(dafeiji.moveto_xy.y - t.y) > v) {
+					if (dafeiji.moveto_bx > 0) {
+						if (dafeiji.moveto_dx > 0) {
+							t.x += v;
+						} else {
+							t.x -= v;
+						}
+						if (dafeiji.moveto_dy > 0) {
+							t.y += v / dafeiji.moveto_rate;
+						} else {
+							t.y -= v / dafeiji.moveto_rate;
+						}
+					} else {
+						if (dafeiji.moveto_dy > 0) {
+							t.y += v;
+						} else {
+							t.y -= v;
+						}
+						if (dafeiji.moveto_dx > 0) {
+							t.x += v * dafeiji.moveto_rate;
+						} else {
+							t.x -= v * dafeiji.moveto_rate;
+						}
+					}
+				} else {
+					delete dafeiji.moveto_xy;
+				}
+			}
+			t.ctx.drawImage(dafeiji.mpng, t.x, t.y);
+		}
+	};
+	
+	Dafeiji.Feiji.prototype.destroy = function (dafeiji) {
+		var t = this;
+		t.isDestroy = true;
+		var key = dafeiji.now;
+		if (key in dafeiji.explodes) {
+			key++;
+		}
+		dafeiji.explodes[key] = new Dafeiji.Feiji.Explode(dafeiji);
+		dafeiji.explodes[key].key = key;
+		dafeiji.explodes[key].x = t.x;
+		dafeiji.explodes[key].y = t.y;
+		if (t.isEnemy) {
+			if (dafeiji.enemies[t.key] != "undefined") {
+				delete dafeiji.enemies[t.key];
+			}
+		} else {
+			dafeiji.moveFlag = false;
+			delete dafeiji.me;
+		}
+	};
+	
+/****************************************************************** Me ******************************************************************/
+	Dafeiji.Me = function (dafeiji) {
+		var t = this;
+		t.ctx = dafeiji.ctx;
+		t.isInit = true;
+		t.velocity = 100;
+		t.initY = dafeiji.documentHeight / 10 * 9 - t.height;
+		if (typeof(t.x) == "undefined") {
+			t.x = dafeiji.documentWidth / 2 - t.width / 2;
+		}
+		if (typeof(t.y) == "undefined") {
+			t.y = dafeiji.documentHeight + t.height;
+		}
+	};
+
+	Dafeiji.Me.prototype = new Dafeiji.Feiji(arguments);
+	Dafeiji.Me.prototype.constructor = Dafeiji.Me;
+	
+	Dafeiji.Me.prototype.move = function () {
+		var t = this;
+		if (t.isInit) {
+			if (t.y > t.initY) {
+				t.y -= t.velocity / dafeiji.fps;
+			} else {
+				t.isInit = false;
+			}
+		}
+	};
+	
+/****************************************************************** Enemy ******************************************************************/
+	Dafeiji.Enemy = function (dafeiji) {
+		var t = this;
+		t.ctx = dafeiji.ctx;
+		t.isEnemy = true;
+		t.width = 100;
+		t.height = 60;
+		t.x = dafeiji.random(1, dafeiji.documentWidth - t.width);
+		t.y = -t.height;
+		t.velocity = dafeiji.random(this.minVelocity, this.maxVelocity);
+		t.type = dafeiji.random(0, 1);
+		t.hp = 1;
+		if (t.type == 1) {
+			t.height = 100;
+			t.hp = 2;
+		}
+	};
+	
+	Dafeiji.Enemy.prototype = new Dafeiji.Feiji(arguments);
+	Dafeiji.Enemy.prototype.constructor = Dafeiji.Enemy;
+	
+	Dafeiji.Enemy.prototype.move = function () {
+		var t = this;
+		if (typeof(t.y) != "undefined") {
+			t.y += t.velocity / dafeiji.fps;
+		}
+	};
+	
+	
+/****************************************************************** Bullet ******************************************************************/
+	Dafeiji.Feiji.Bullet = function (dafeiji) {
+		this.width = 30 * dafeiji.firePower;
+		this.height = 30 * dafeiji.firePower;
+		this.velocity = 300;
+	};
+	
+	Dafeiji.Feiji.Bullet.prototype.init = function() {
+		var t = this;
+		t.ctx = dafeiji.ctx;
+		t.x = dafeiji.me.x;
+		t.x = t.x + dafeiji.me.width / 2 - t.width / 2;
+		t.y = dafeiji.me.y;
+		t.y = t.y - t.height;
+	};
+
+	Dafeiji.Feiji.Bullet.prototype.shot = function() {
+		var t = this;
+		t.ctx = dafeiji.ctx;
+		t.y -= t.velocity / dafeiji.fps;
+		t.ctx.drawImage(dafeiji.bpng, 0, 0, dafeiji.bpng.width, dafeiji.bpng.height, t.x, t.y, t.width, t.height);
+	};
+
+/****************************************************************** Explode ******************************************************************/
+	Dafeiji.Feiji.Explode = function (dafeiji) {
+		var t = this;
+		t.ctx = dafeiji.ctx;
+		this.width = 100;
+		this.height = 100;
+		this.time = dafeiji.now;
+		this.changeTime = 50;
+	};
+	
+	Dafeiji.Feiji.Explode.prototype.init = function () {
+		var t = this;
+		if (dafeiji.now - t.time < t.changeTime) {
+			t.ctx.drawImage(dafeiji.explode_png, 0, 0, t.width, t.height, t.x, t.y, t.width, t.height);
+		} else if (dafeiji.now - t.time > t.changeTime && dafeiji.now - t.time < t.changeTime * 2) {
+			t.ctx.drawImage(dafeiji.explode_png, 100, 0, t.width, t.height, t.x, t.y, t.width, t.height);
+		} else if (dafeiji.now - t.time > t.changeTime * 2 && dafeiji.now - t.time < t.changeTime * 3) {
+			t.ctx.drawImage(dafeiji.explode_png, 200, 0, t.width, t.height, t.x, t.y, t.width, t.height);
+		} else if (dafeiji.now - t.time > t.changeTime * 3 && dafeiji.now - t.time < t.changeTime * 4) {
+			t.ctx.drawImage(dafeiji.explode_png, 300, 0, t.width, t.height, t.x, t.y, t.width, t.height);
+		} else if (dafeiji.now - t.time > t.changeTime * 4 && dafeiji.now - t.time < t.changeTime * 5) {
+			t.ctx.drawImage(dafeiji.explode_png, 400, 0, t.width, t.height, t.x, t.y, t.width, t.height);
+		} else if (dafeiji.now - t.time > t.changeTime * 5 && dafeiji.now - t.time < t.changeTime * 6) {
+			t.ctx.drawImage(dafeiji.explode_png, 500, 0, t.width, t.height, t.x, t.y, t.width, t.height);
+		} else if (dafeiji.now - t.time > t.changeTime * 6 && dafeiji.now - t.time < t.changeTime * 7) {
+			t.ctx.drawImage(dafeiji.explode_png, 600, 0, t.width, t.height, t.x, t.y, t.width, t.height);
+		} else if (dafeiji.now - t.time > t.changeTime * 7 && dafeiji.now - t.time < t.changeTime * 8) {
+			t.ctx.drawImage(dafeiji.explode_png, 700, 0, t.width, t.height, t.x, t.y, t.width, t.height);
+		} else if (dafeiji.now - t.time > t.changeTime * 8 && dafeiji.now - t.time < t.changeTime * 9) {
+			t.ctx.drawImage(dafeiji.explode_png, 800, 0, t.width, t.height, t.x, t.y, t.width, t.height);
+		} else {
+			var r = dafeiji.random(0, 5);
+			if (r == 1) {
+				dafeiji.bonus[dafeiji.now] = new Dafeiji.Bonus(dafeiji);
+				dafeiji.bonus[dafeiji.now].key = dafeiji.now;
+				dafeiji.bonus[dafeiji.now].x = t.x;
+				dafeiji.bonus[dafeiji.now].y = t.y;
+			}
+			delete dafeiji.explodes[t.key];
+		}
+	};
+
+	return Dafeiji;
+})(jQuery);
+
+var dafeiji = new Dafeiji("dafeiji");
+dafeiji.init();
+</script>
+</body>
+</html>
